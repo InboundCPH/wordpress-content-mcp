@@ -402,12 +402,68 @@ def search_posts(
 
 
 # ============================================================================
+# Health Check Endpoint
+# ============================================================================
+
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> JSONResponse:
+    """Health check endpoint for Railway monitoring."""
+    try:
+        # Test WordPress connection
+        wp_client.get_posts(per_page=1)
+        return JSONResponse({
+            "status": "healthy",
+            "service": "wordpress-content-mcp",
+            "wordpress_url": settings.WORDPRESS_URL,
+            "connected": True
+        })
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            {
+                "status": "unhealthy",
+                "service": "wordpress-content-mcp",
+                "error": str(e)
+            },
+            status_code=503
+        )
+
+@mcp.custom_route("/", methods=["GET"])
+async def root(request: Request) -> JSONResponse:
+    """Root endpoint with server info."""
+    return JSONResponse({
+        "name": "WordPress Content Management MCP Server",
+        "version": "1.0.0",
+        "status": "running",
+        "wordpress_url": settings.WORDPRESS_URL,
+        "mcp_endpoint": "/mcp/",
+        "health_endpoint": "/health"
+    })
+
+
+# ============================================================================
 # Run Server
 # ============================================================================
 
 if __name__ == "__main__":
+    import os
+    
     logger.info("Starting WordPress Content Management MCP Server...")
     logger.info(f"Connected to: {settings.WORDPRESS_URL}")
     logger.info("Available tools: 12")
-    mcp.run()
+    
+    # Check if running in production (Railway sets PORT env var)
+    port = os.getenv("PORT")
+    
+    if port:
+        # Production mode: HTTP transport for Railway
+        logger.info(f"Running in production mode on port {port}")
+        mcp.run(transport="http", host="0.0.0.0", port=int(port))
+    else:
+        # Development mode: STDIO transport for local use
+        logger.info("Running in development mode (STDIO)")
+        mcp.run()
 
